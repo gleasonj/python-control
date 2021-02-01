@@ -2,8 +2,6 @@ import numpy as np
 
 from .special import Empty, Universe
 
-from .polytopes import HPolytope, VPolytope
-
 from .utils import check_valid_contains_points
 
 from scipy.optimize import linprog

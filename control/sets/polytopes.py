@@ -3,6 +3,7 @@ import numpy as np
 from .hypperrectangle import Hyperrectangle
 
 from scipy.optimize import linprog
+from scipy.linalg import block_diag
 
 class HPolytope():
     __array_ufunc__ = None
@@ -50,8 +51,26 @@ class HPolytope():
         else:
             raise StopIteration
         
-    def __mul__(self, b):
-        if isinstance(b)
+    def __mul__(self, P):
+        if isinstance(P, VPolytope):
+            return PolytopeCartesianProduct(self, P)
+        elif isinstance(P, HPolytope):
+            return HPolytope(block_diag(self.A, P.A), 
+                np.concatenate((self.b, P.b)))
+        elif isinstance(P, Hyperrectangle):
+            return self * _hypperrectangle_to_hpolytope(P)
+        else:
+            return NotImplemented
+
+    def __rmul__(self, P):
+        # Note that different from the __mull__ function we don't need to 
+        # include what happens for H or VPolytopes. This is because for either
+        # of those types, P.__mul__ should have been already been called.
+        if isinstance(P, Hyperrectangle):
+            return _hypperrectangle_to_hpolytope(P) * self
+        else:
+            return NotImplemented
+
     def bounding_box(self):
         ''' Return the bounding box of the polytope 
 
@@ -137,6 +156,26 @@ class VPolytope():
         else:
             raise StopIteration
 
+    def __mul__(self, P):
+        if isinstance(P, HPolytope):
+            return PolytopeCartesianProduct(self, P)
+        elif isinstance(P, VPolytope):
+            return PolytopeCartesianProduct(self, P)
+        elif isinstance(P, Hyperrectangle):
+            return PolytopeCartesianProduct(self, 
+                _hypperrectangle_to_hpolytope(P))
+        else:
+            return NotImplemented
+
+    def __rmul__(self, P):
+        # Note that different from the __mull__ function we don't need to 
+        # include what happens for H or VPolytopes. This is because for either
+        # of those types, P.__mul__ should have been already been called.
+        if isinstance(P, Hyperrectangle):
+            return _hypperrectangle_to_hpolytope(P) * self
+        else:
+            return NotImplemented
+
     def bounding_box(self):
         return Hyperrectangle(np.min(self.V, axis=1), np.max(self.V, axis=1))
 
@@ -158,11 +197,26 @@ class VPolytope():
         else:
             return NotImplemented
 
-class MixedPolytopeCartesionProduct():
+def _hypperrectangle_to_hpolytope(hr):
+    return HPolytope(np.vstack((-np.eye(hr.dim), np.eye(hr.dim))),
+        np.concatenate((-hr.lb, hr.ub)))
+
+class PolytopeCartesianProduct():
     def __init__(self, A, B):
         self._A = A
         self._B = B
 
     def contains(self, x):
+        if not isinstance(x, np.ndarray):
+            raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
+                'array where each column represents a point.')
+
+        if len(x.shape) > 2:
+            raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
+                'array where each column represents a point.')
+
+        if len(x.shape) == 2:
+            return np.array([self.contains(v) for v in x.T])
+        
         return self._A.contains(x[:self._A.dim]) and \
             self._B.contains(x[self._A.dim:])
