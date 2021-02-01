@@ -112,7 +112,7 @@ class HPolytope():
             raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
                 'array where each column represents a point.')
 
-        return self.A @ x <= self.b
+        return np.all(self.A @ x <= self.b, axis=0)
 
 class VPolytope():
     __array_ufunc__ = None
@@ -196,6 +196,24 @@ class VPolytope():
             return VPolytope(M @ self.V)
         else:
             return NotImplemented
+    
+    def contains(self, x):
+        if not isinstance(x, np.ndarray):
+            raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
+                'array where each column represents a point.')
+
+        if len(x.shape) > 2:
+            raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
+                'array where each column represents a point.')
+
+        if len(x.shape) == 2:
+            return np.array([self.contains(v) for v in x.T])
+
+        res = linprog(np.zeros(self.nv), 
+            A_eq=np.vstack((np.ones(self.nv), self.V)), 
+            b_eq=np.concatenate((1, x)))
+
+        return res.success
 
 def _hypperrectangle_to_hpolytope(hr):
     return HPolytope(np.vstack((-np.eye(hr.dim), np.eye(hr.dim))),

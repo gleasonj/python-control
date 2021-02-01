@@ -125,31 +125,3 @@ class SupportSetCartesianProduct(SupportSet):
 
     def __call__(self, l):
         np.concatenate((self._A(l), self._B(l)))
-
-class ConvexWalkSuportSetSampler():
-    def __init__(self, S: SupportSet):
-        self._S = S
-        self._x = supvec(S, self._randl())
-
-    def _randl(self):
-        ''' Convenience method to randomly sample a point on the n-Sphere '''
-        return np.random.multivariate_normal(np.zeros(self.S.dim),
-            np.eye(self.S.dim))
-
-    @property
-    def S(self):
-        return self._S
-
-    @property
-    def x(self):
-        return self._x
-
-    def sample(self, n=1):
-        if n > 1:
-            return np.array([self.sample() for _ in range(n)]).T
-        else:
-            lam = np.random.rand()
-
-            self.x = lam * self.x + (1 - lam) * supvec(self.S, self._randl())
-
-            return self.x
