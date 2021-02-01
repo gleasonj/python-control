@@ -2,8 +2,6 @@ import numpy as np
 
 from .special import Empty, Universe
 
-from .utils import check_valid_contains_points
-
 from scipy.optimize import linprog
 
 class Hyperrectangle():
@@ -46,8 +44,6 @@ class Hyperrectangle():
         if isinstance(b, Hyperrectangle):
             return Hyperrectangle(np.concatenate((self.lb, b.lb)),
                 np.concatenate((self.ub, b.ub)))
-        elif isinstance(b, HPolytope):
-            return HPolytope()
         else:
             return NotImplemented
 

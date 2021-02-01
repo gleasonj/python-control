@@ -28,8 +28,16 @@ class SupportSet():
                     SingletonSupportSet(B))
             else:
                 return NotImplemented
+        elif isinstance(B, Hyperrectangle):
+            return MinkowskiAdditionSupportSet(self, 
+                HyperrectangleSupportSet(B))
         else:
             return NotImplemented
+
+    @property
+    def dim(self):
+        return NotImplementedError('Any subclass of SupportSet needs to define '
+            'the dimension of the set.')
 
 def supvec(S, l: np.ndarray):
     if not isinstance(S, (SupportSet, Hyperrectangle)):
@@ -65,11 +73,15 @@ class HyperrectangleSupportSet(SupportSet):
         self._S = S
 
     def __call__(self, l):
-        v = np.zeros(self.dim)
-        for i in range(self.dim):
-            v[i] = self.lb[i] if l[i] < 0 else self.ub[i]
+        v = np.zeros(self._S.dim)
+        for i in range(self._S.dim):
+            v[i] = self._S.lb[i] if l[i] < 0 else self._S.ub[i]
 
         return v
+
+    @property
+    def dim(self):
+        return self._S.dim
 
 class SingletonSupportSet(SupportSet):
     def __init__(self, x: np.ndarray):
@@ -78,8 +90,16 @@ class SingletonSupportSet(SupportSet):
     def __call__(self, l):
         return self._x
 
+    @property
+    def dim(self):
+        return len(self._x)
+
 class MinkowskiAdditionSupportSet(SupportSet):
     def __init__(self, A: SupportSet, B: SupportSet):
+        if not A.dim == B.dim:
+            raise ValueError('Dimension mistmatch between added support sets: '
+                '{} != {}'.format(A.dim, B.dim))
+        
         self._A = A
         self._B = B
 
@@ -88,6 +108,10 @@ class MinkowskiAdditionSupportSet(SupportSet):
 
 class MatMulSupportSet(SupportSet):
     def __init__(self, S: SupportSet, M: np.ndarray):
+        if not S.dim == M.shape[1]:
+            raise ValueError('Dimension mismatch in M @ S: {} != {}'.format(
+                M.shape[1], S.dim))
+        
         self._S = S
         self._M = M
 
@@ -101,3 +125,31 @@ class SupportSetCartesianProduct(SupportSet):
 
     def __call__(self, l):
         np.concatenate((self._A(l), self._B(l)))
+
+class ConvexWalkSuportSetSampler():
+    def __init__(self, S: SupportSet):
+        self._S = S
+        self._x = supvec(S, self._randl())
+
+    def _randl(self):
+        ''' Convenience method to randomly sample a point on the n-Sphere '''
+        return np.random.multivariate_normal(np.zeros(self.S.dim),
+            np.eye(self.S.dim))
+
+    @property
+    def S(self):
+        return self._S
+
+    @property
+    def x(self):
+        return self._x
+
+    def sample(self, n=1):
+        if n > 1:
+            return np.array([self.sample() for _ in range(n)]).T
+        else:
+            lam = np.random.rand()
+
+            self.x = lam * self.x + (1 - lam) * supvec(self.S, self._randl())
+
+            return self.x

@@ -2,5 +2,4 @@ from .hypperrectangle import Hyperrectangle, EuclideanRn
 
 from .special import Empty, Universe
 
-from .supporsets import AbstractSupportSet, supvec, supfcn, \
-    MinkowskiAdditionSupportSet
+from .supporsets import SupportSet, supvec, supfcn

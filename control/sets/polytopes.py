@@ -85,7 +85,7 @@ class HPolytope():
             a = A[i]
             b[i] = -linprog(-a, self.A, self.b, bounds=(-np.inf, np.inf)).fun
 
-        return Hyperrectangle(b[:A.shape[0]/2], b[A.shape[0]/2:])
+        return Hyperrectangle(b[:len(b)/2], b[len(b)/2:])
 
     def __rmatmul__(self, M):
         if isinstance(M, np.ndarray):
