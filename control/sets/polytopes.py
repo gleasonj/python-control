@@ -2,6 +2,8 @@ import numpy as np
 
 from .hypperrectangle import Hyperrectangle
 
+from .special import Empty, Universe
+
 from scipy.optimize import linprog
 from scipy.linalg import block_diag
 
@@ -63,11 +65,35 @@ class HPolytope():
             return NotImplemented
 
     def __rmul__(self, P):
-        # Note that different from the __mull__ function we don't need to 
-        # include what happens for H or VPolytopes. This is because for either
-        # of those types, P.__mul__ should have been already been called.
         if isinstance(P, Hyperrectangle):
             return _hypperrectangle_to_hpolytope(P) * self
+        else:
+            return NotImplemented
+
+    def __and__(self, P):
+        if isinstance(P, HPolytope):
+            return HPolytope(np.vstack((self.A, P.A)), 
+                np.concatenate((self.b, P.b)))
+        elif isinstance(P, PolytopeUnion):
+            # Using distributive property of intersections and unions
+            #   A & (B | C) = (A & B) | (A & C)
+            return PolytopeUnion(*[poly and self for poly in P])
+        else:
+            return NotImplemented
+
+    def __or__(self, P):
+        if isinstance(P, (HPolytope, VPolytope)):
+            return PolytopeUnion(self, P)
+        elif isinstance(P, Hyperrectangle):
+            return PolytopeUnion(self, _hypperrectangle_to_hpolytope(P))
+        else:
+            return NotImplemented
+
+    def __ror__(self, P):
+        if isinstance(P, (HPolytope, VPolytope)):
+            return PolytopeUnion(P, self)
+        elif isinstance(P, Hyperrectangle):
+            return PolytopeUnion(_hypperrectangle_to_hpolytope(P), self)
         else:
             return NotImplemented
 
@@ -83,9 +109,15 @@ class HPolytope():
 
         for i in range(len(b)):
             a = A[i]
-            b[i] = -linprog(-a, self.A, self.b, bounds=(-np.inf, np.inf)).fun
+            if sum(a) == 1.0:
+                b[i] = -linprog(-a, self.A, self.b, bounds=(-np.inf, np.inf)).fun
+            else:
+                b[i] = linprog(-a, self.A, self.b, bounds=(-np.inf, np.inf)).fun
 
-        return Hyperrectangle(b[:len(b)/2], b[len(b)/2:])
+        # Using a trick here: the floor divide // will automatically convert
+        # the resulting division to an int. By definition, the len(b) is an
+        # even number so this will work.
+        return Hyperrectangle(b[:len(b)//2], b[len(b)//2:])
 
     def __rmatmul__(self, M):
         if isinstance(M, np.ndarray):
@@ -108,8 +140,8 @@ class HPolytope():
             raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
                 'array where each column represents a point.')
 
-        if len(x.shape) > 2:
-            raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
+        if x.ndim > 2:
+            raise ValueError('Point(s) must be a 1d numpy array or 2d numpy '
                 'array where each column represents a point.')
 
         return np.all(self.A @ x <= self.b, axis=0)
@@ -202,11 +234,11 @@ class VPolytope():
             raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
                 'array where each column represents a point.')
 
-        if len(x.shape) > 2:
-            raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
+        if x.ndim > 2:
+            raise ValueError('Point(s) must be a 1d numpy array or 2d numpy '
                 'array where each column represents a point.')
 
-        if len(x.shape) == 2:
+        if x.ndim == 2:
             return np.array([self.contains(v) for v in x.T])
 
         res = linprog(np.zeros(self.nv), 
@@ -215,25 +247,92 @@ class VPolytope():
 
         return res.success
 
+class PolytopeUnion():
+    def __init__(self, *args):
+        for P in args:
+            if not isinstance(P, (VPolytope, HPolytope)):
+                raise TypeError('All elements of a polytope union must be '
+                    'polytopes.')
+
+        self._polytopes = args
+
+    @property
+    def polytopes(self):
+        return self._polytopes
+
+    def __len__(self):
+        return len(self._polytopes)
+
+    def __iter__(self):
+        self._pidx = 0
+        return self
+
+    def __next__(self):
+        if self._pidx < len(self):
+            P = self.polytopes[self._pidx]
+            self._pidx += 1
+            return P
+        else:
+            raise StopIteration
+
+    def __or__(self, P):
+        if isinstance(P, (HPolytope, VPolytope)):
+            return PolytopeUnion(*self.polytopes, P)
+        elif isinstance(P, PolytopeUnion):
+            return PolytopeUnion(*self.polytopes, *P.polytopes)
+        else:
+            return NotImplemented
+
+    def __ror__(self, P):
+        if isinstance(P, (HPolytope, VPolytope)):
+            return PolytopeUnion(P, *self.polytopes)
+        else:
+            return NotImplemented
+
+    def contains(self, x):
+        if x.ndim == 2:
+            return np.array([self.contains(v) for v in x.T])
+        else:
+            return np.any([P.contains(x) for P in self.polytopes])
+
+    def bounding_box(self):
+        bbox = Empty()
+        for poly in self:
+            bbox += poly.bounding_box()
+
+        return bbox
+
+    @property
+    def dim(self):
+        return self.polytopes[0].dim
+
 def _hypperrectangle_to_hpolytope(hr):
     return HPolytope(np.vstack((-np.eye(hr.dim), np.eye(hr.dim))),
         np.concatenate((-hr.lb, hr.ub)))
 
 class PolytopeCartesianProduct():
+    __array_ufunc__ = None
     def __init__(self, A, B):
         self._A = A
         self._B = B
+
+    @property
+    def dim(self):
+        return self._A.dim + self._B.dim
+
+    def bounding_box(self):
+        return self._A.bounding_box() * self._B.bounding_box()
 
     def contains(self, x):
         if not isinstance(x, np.ndarray):
             raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
                 'array where each column represents a point.')
 
-        if len(x.shape) > 2:
+        if x.ndim > 2:
             raise TypeError('Point(s) must be a 1d numpy array or 2d numpy '
                 'array where each column represents a point.')
 
-        if len(x.shape) == 2:
+        if x.ndim == 2:
             return np.array([self.contains(v) for v in x.T])
         
         return self._A.contains(x[:self._A.dim]) and \

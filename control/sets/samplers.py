@@ -6,6 +6,34 @@ from .polytopes import VPolytope, HPolytope
 
 from .hypperrectangle import Hyperrectangle
 
+class UniformRejectionSampler():
+    def __init__(self, S):
+        try:
+            self._bbox = S.bounding_box()
+        except:
+            raise ValueError('Could not compute bounding box for set provided.')
+
+        try:
+            S.contains(np.zeros(S.dim))
+        except:
+            raise ValueError('Could not check containment for set provided.')
+
+        self._S = S
+
+    @property
+    def S(self):
+        return self._S
+
+    def sample(self, n=1):
+        if n > 1:
+            return np.array([self.sample() for _ in range(n)]).T
+        else:
+            x = self._bbox.sample()
+            while not self.S.contains(x):
+                x = self._bbox.sample()
+
+            return x
+
 class UniformPolytopeSampler():
     def __init__(self, P: (VPolytope, HPolytope)):
         if not isinstance(P, (VPolytope, HPolytope)):
@@ -88,7 +116,7 @@ class ConvexWalkSampler():
 
     def _get_vertex(self):
         if isinstance(self.S, VPolytope):
-            return self.S.V[np.random.randint(self.S.nv)]
+            return self.S.V[:, np.random.randint(self.S.nv)]
         elif isinstance(self.S, SupportSet):
             return supvec(self.S, UniformDSphereSampler(self.S.dim).sample())
         else:
@@ -100,6 +128,6 @@ class ConvexWalkSampler():
         else:
             lam = np.random.rand()
 
-            self.x = lam * self.x + (1 - lam) * self._get_vertex()
+            self._x = lam * self._x + (1 - lam) * self._get_vertex()
 
             return self.x
