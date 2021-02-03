@@ -22,6 +22,7 @@ class TestHPolytope(unittest.TestCase):
     def test_empty_comparison(self):
         P = cset.HPolytope(self.P.A, -np.ones(4))
         self.assertTrue(P == cset.Empty())
+        self.assertFalse(self.P == cset.Empty())
 
     def test_universe_comparison(self):
         self.assertTrue(self.P < cset.Universe())

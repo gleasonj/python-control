@@ -68,3 +68,6 @@ class ZonotopeBundle():
             return ZonotopeBundle(*self.zonotopes, *Z.zonotopes)
         else:
             return NotImplemented
+
+def to_zonotope(P):
+    raise NotImplementedError('In progress...')

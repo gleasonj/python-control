@@ -90,14 +90,14 @@ def supvec(S, l: np.ndarray):
         raise TypeError('Direction vector(s) must be a 1d numpy array or a '
             '2d numpy array where each column represents a direction.')
     
-    if l.ndiim > 2:
+    if l.ndim > 2:
         raise ValueError('Direction vector(s) must be a 1d numpy array or a '
             '2d numpy array where each column represents a direction.')
 
-    if l.ndiim == 2 and not S.dim == l.shape[0]:
+    if l.ndim == 2 and not S.dim == l.shape[0]:
         raise ValueError('Dimension mismatch between direction(s) and set')
 
-    if l.ndiim == 2:
+    if l.ndim == 2:
         return np.array([supvec(S, v) for v in l.T]).T
     
     if isinstance(S, SupportSet):
@@ -130,7 +130,10 @@ def supfcn(S: SupportSet, l: np.ndarray):
         v   Support function value(s). A single value is given by a float; 
             multiple values are given by a 1d numpy array.
     '''
-    return l.T @ supvec(S, l)
+    if l.ndim == 2:
+        return np.array([supfcn(S, x) for x in l.T])
+    else:
+        return l @ supvec(S, l)
 
 class HPolytopeSupportSet(SupportSet):
     ''' SupportSet wrapper for an HPolytope set 
@@ -254,8 +257,8 @@ class MatMulSupportSet(SupportSet):
             raise ValueError('Dimension mismatch in M @ S: {} != {}'.format(
                 M.shape[1], S.dim))
             
-        if not M.shape[0] == M.shape[1]:
-            raise ValueError('Multiplying matrix must be square.')
+        # if not M.shape[0] == M.shape[1]:
+        #     raise ValueError('Multiplying matrix must be square.')
         
         self._S = S
         self._M = M
@@ -265,7 +268,7 @@ class MatMulSupportSet(SupportSet):
 
     @property
     def dim(self):
-        return self._S.dim
+        return self._M.shape[0]
 
 class ScalorMulSupportSet(SupportSet):
     def __init__(self, S: SupportSet, c: float):
@@ -374,6 +377,20 @@ class Ball2NormSupportSet(BallpNormSupportSet):
     def __init__(self, center: np.ndarray, radius: float):
         super().__init__(2, center, radius)
 
+    def __call__(self, l):
+        return self._radius * l
+
 class BallInfNormSupportSet(BallpNormSupportSet):
     def __init__(self, center: np.ndarray, radius: float):
         super().__init__(np.inf, center, radius)
+
+def to_supportset(P):
+    if isinstance(P, Hyperrectangle):
+        return HyperrectangleSupportSet(P)
+    elif isinstance(P, HPolytope):
+        return HPolytopeSupportSet(P)
+    elif isinstance(P, VPolytope):
+        return VPolytopeSupportSet(P)
+    else:
+        raise TypeError('Unable to convert set of type {} to a support set.'.format(
+            type(P)))

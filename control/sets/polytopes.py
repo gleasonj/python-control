@@ -370,10 +370,6 @@ class VPolytopeBundle():
     def __iter__(self):
         return iter(self.polytopes)
 
-def _hypperrectangle_to_hpolytope(hr):
-    return HPolytope(np.vstack((-np.eye(hr.dim), np.eye(hr.dim))),
-        np.concatenate((-hr.lb, hr.ub)))
-
 class PolytopeCartesianProduct():
     __array_ufunc__ = None
     def __init__(self, A, B):
@@ -587,3 +583,10 @@ class EuclideanRn(Hyperrectangle):
                 'integer greater than 0.')
 
         super().__init__(-np.inf * np.ones(n), np.inf * np.ones(n))
+
+def to_vpolytope(P):
+    raise NotImplementedError('In progress...')
+
+def to_hpolytope(P):
+    raise NotImplementedError('In progress...')
+
