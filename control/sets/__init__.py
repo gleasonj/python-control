@@ -6,7 +6,8 @@ from .supporsets import supvec, \
                         SupportSet, \
                         Ball2NormSupportSet, \
                         Ball1NormSupportSet, \
-                        BallpNormSupportSet
+                        BallpNormSupportSet, \
+                        BallInfNormSupportSet
 
 from .support_approximations import underapproximate, overapproximate
 

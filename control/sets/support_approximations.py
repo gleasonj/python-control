@@ -7,6 +7,22 @@ from .samplers import UniformDSphereSampler
 from .polytopes import HPolytope, VPolytope
 
 def overapproximate(S, L):
+    ''' Overapproximate a given SupportSet using support function values
+
+    We use support functions to determine an HPolytope overapproxatiom of a
+    support set using a given set of directions, or through a given number
+    of random directions on the unit d-sphere.
+
+    INPUTS:
+        S   SupportSet
+        L   Either an numpy ndarray giving a set of directions to sample for
+            the overapproximation, where each column represents a direction,
+            or an integer specifying the number of directions to use from
+            random generation on the unit d-sphere.
+
+    OUTPUTS:
+        P   HPolytope overapproximation of the set S
+    '''
     if not isinstance(S, SupportSet):
         raise TypeError('S needs to be a support set')
 
@@ -23,6 +39,22 @@ def overapproximate(S, L):
     return HPolytope(L.T, supfcn(S, L))
 
 def underapproximate(S, L):
+    ''' Under a given SupportSet using support vectors
+
+    We use support vectors to determine a VPolytope underapproximation of a
+    support set using a given set of directions, or through a given number
+    of random directions on the unit d-sphere.
+
+    INPUTS:
+        S   SupportSet
+        L   Either an numpy ndarray giving a set of directions to sample for
+            the underapproximation, where each column represents a direction,
+            or an integer specifying the number of directions to use from
+            random generation on the unit d-sphere.
+
+    OUTPUTS:
+        P   VPolytope underapproximation of the set S
+    '''
     if not isinstance(S, SupportSet):
         raise TypeError('S needs to be a support set')
 

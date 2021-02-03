@@ -2,7 +2,7 @@ import numpy as np
 
 from .polytopes import HPolytope, VPolytope, Hyperrectangle
 
-from scipy.optimize import linprog
+from scipy.optimize import linprog, minimize, NonlinearConstraint
 
 class SupportSet():
     ''' Base Support Set Class
@@ -323,8 +323,8 @@ class BallpNormSupportSet(SupportSet):
         radius  Radius
     '''
     def __init__(self, p: int, center: np.ndarray, radius: float):
-        if not isinstance(p, int):
-            raise ValueError('P-value must be an integer')
+        if not (isinstance(p, int) or p == np.inf or p == -np.inf):
+            raise ValueError('P-value must be an integer or numpy inf')
 
         if not isinstance(center, np.ndarray) or len(center.shape) > 1:
             raise ValueError('Center must be a 1d numpy array')
@@ -355,6 +355,14 @@ class BallpNormSupportSet(SupportSet):
     def dim(self):
         ''' Dimension '''
         return len(self._center)
+
+    def __call__(self, l):
+        res = minimize(lambda x: -l.T @ x, np.zeros(self.dim), 
+            constraints=NonlinearConstraint(
+            lambda x: np.linalg.norm(x - self.center, ord=self.p),
+            0, self.radius))
+
+        return res.x
 
     def contains(self, x):
         if not isinstance(x, np.ndarray) or x.ndim > 2:
