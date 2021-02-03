@@ -1,8 +1,6 @@
 import numpy as np
 
-from .hypperrectangle import Hyperrectangle
-
-from .polytopes import HPolytope, VPolytope
+from .polytopes import HPolytope, VPolytope, Hyperrectangle
 
 from scipy.optimize import linprog
 
@@ -151,6 +149,9 @@ class HPolytopeSupportSet(SupportSet):
     def contains(self, x):
         return self._P.contains(x)
 
+    def bounding_box(self):
+        return self._P.bounding_box()
+
     @property
     def dim(self):
         return self._P.dim
@@ -174,31 +175,24 @@ class VPolytopeSupportSet(SupportSet):
     def dim(self):
         return self._P.dim
 
-class HyperrectangleSupportSet(SupportSet):
+class HyperrectangleSupportSet(HPolytopeSupportSet):
     ''' SupportSet wrapper for a Hyperrectangle set 
     
     INPUTS:
-        S   Hyperrectangle set
+        P   Hyperrectangle set
     '''
-    def __init__(self, S: Hyperrectangle):
-        self._S = S
+    def __init__(self, P: Hyperrectangle):
+        super().__init__(P)
 
     def __call__(self, l):
-        v = np.zeros(self._S.dim)
-        for i in range(self._S.dim):
-            v[i] = self._S.lb[i] if l[i] < 0 else self._S.ub[i]
+        v = np.zeros(self._P.dim)
+        for i in range(self._P.dim):
+            v[i] = self._P.lb[i] if l[i] < 0 else self._P.ub[i]
 
         return v
 
     def bounding_box(self):
-        return self._S
-
-    @property
-    def dim(self):
-        return self._S.dim
-
-    def contains(self, x):
-        return self._S.contains(x)
+        return self._P
 
 class SingletonSupportSet(SupportSet):
     ''' SupportSet wrapper for a numpy array 

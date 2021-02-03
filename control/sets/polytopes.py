@@ -1,7 +1,5 @@
 import numpy as np
 
-from .hypperrectangle import Hyperrectangle
-
 from .special import Empty, Universe
 
 from scipy.optimize import linprog
@@ -59,14 +57,6 @@ class HPolytope():
         elif isinstance(P, HPolytope):
             return HPolytope(block_diag(self.A, P.A), 
                 np.concatenate((self.b, P.b)))
-        elif isinstance(P, Hyperrectangle):
-            return self * _hypperrectangle_to_hpolytope(P)
-        else:
-            return NotImplemented
-
-    def __rmul__(self, P):
-        if isinstance(P, Hyperrectangle):
-            return _hypperrectangle_to_hpolytope(P) * self
         else:
             return NotImplemented
 
@@ -84,16 +74,18 @@ class HPolytope():
     def __or__(self, P):
         if isinstance(P, (HPolytope, VPolytope)):
             return PolytopeUnion(self, P)
-        elif isinstance(P, Hyperrectangle):
-            return PolytopeUnion(self, _hypperrectangle_to_hpolytope(P))
+        elif isinstance(P, Empty):
+            return self
+        elif isinstance(P, Universe):
+            return P
         else:
             return NotImplemented
 
     def __ror__(self, P):
         if isinstance(P, (HPolytope, VPolytope)):
             return PolytopeUnion(P, self)
-        elif isinstance(P, Hyperrectangle):
-            return PolytopeUnion(_hypperrectangle_to_hpolytope(P), self)
+        elif isinstance(P, (Empty, Universe)):
+            return self.__or__(P)
         else:
             return NotImplemented
 
@@ -188,24 +180,39 @@ class VPolytope():
         else:
             raise StopIteration
 
+    def __or__(self, P):
+        if isinstance(P, (HPolytope, VPolytope)):
+            return PolytopeUnion(self, P)
+        elif isinstance(P, Empty):
+            return self
+        elif isinstance(P, Universe):
+            return P
+        else:
+            return NotImplemented
+
+    def __ror__(self, P):
+        if isinstance(P, (HPolytope, VPolytope)):
+            return PolytopeUnion(P, self)
+        elif isinstance(P, (Empty, Universe)):
+            return self.__or__(P)
+        else:
+            return NotImplemented
+
     def __mul__(self, P):
         if isinstance(P, HPolytope):
             return PolytopeCartesianProduct(self, P)
         elif isinstance(P, VPolytope):
             return PolytopeCartesianProduct(self, P)
-        elif isinstance(P, Hyperrectangle):
-            return PolytopeCartesianProduct(self, 
-                _hypperrectangle_to_hpolytope(P))
         else:
             return NotImplemented
 
-    def __rmul__(self, P):
-        # Note that different from the __mull__ function we don't need to 
-        # include what happens for H or VPolytopes. This is because for either
-        # of those types, P.__mul__ should have been already been called.
-        if isinstance(P, Hyperrectangle):
-            return _hypperrectangle_to_hpolytope(P) * self
-        else:
+    def __add__(self, P):
+        if isinstance(P, VPolytope):
+            # NOTE  Minkowski summation of vertex polytopes can very quickly 
+            #       become computationally intractible because of the 
+            #       exponential growth in the number of vertices.
+            return VPolytope(np.hstack([np.atleast_2d(v).T + self.V for v in P]))
+        else: 
             return NotImplemented
 
     def bounding_box(self):
@@ -280,12 +287,26 @@ class PolytopeUnion():
             return PolytopeUnion(*self.polytopes, P)
         elif isinstance(P, PolytopeUnion):
             return PolytopeUnion(*self.polytopes, *P.polytopes)
+        elif isinstance(P, Hyperrectangle):
+            return PolytopeUnion(*self.polytopes, 
+                P)
+        elif isinstance(P, Empty):
+            return self
+        elif isinstance(P, Universe):
+            return P
         else:
             return NotImplemented
 
     def __ror__(self, P):
         if isinstance(P, (HPolytope, VPolytope)):
             return PolytopeUnion(P, *self.polytopes)
+        elif isinstance(P, PolytopeUnion):
+            return PolytopeUnion(*P.polytopes, *self.polytopes)
+        elif isinstance(P, Hyperrectangle):
+            return PolytopeUnion(P, 
+                *self.polytopes)
+        elif isinstance(P, (Empty, Universe)):
+            return self.__or__(P)
         else:
             return NotImplemented
 
@@ -337,3 +358,205 @@ class PolytopeCartesianProduct():
         
         return self._A.contains(x[:self._A.dim]) and \
             self._B.contains(x[self._A.dim:])
+
+
+class Hyperrectangle(HPolytope):
+    ''' Hyperrectangle set
+
+    A hyperrectangular set is given by lower and upper bounding vectors.
+
+                    --------------------o upper bound
+                    |                   |
+                    |                   |
+                    |                   |
+        lower bound o--------------------
+
+    INPUTS:
+        lb  Lower bound vector
+        ub  Upper bound vector
+
+    RETURNS:
+        Hyperrrectangle object
+    '''
+    __array_ufunc__ = None
+    def __init__(self, lb: np.ndarray, ub: np.ndarray):
+        assert len(lb.shape) == 1, 'Lower bound must be an array'
+        assert len(ub.shape) == 1, 'Upper bound must be an array'
+        assert len(lb) == len(ub), 'Lower and upper bounds must have same length'
+
+        super().__init__(np.vstack((-np.eye(len(lb)), np.eye(len(lb)))),
+            np.concatenate((-lb, ub)))
+
+        self._lb = lb
+        self._ub = ub
+
+    def __rmul__(self, b):
+        if isinstance(b, float):
+            return self.__mul__(b)
+        else:
+            return NotImplemented
+
+    def __mul__(self, b):
+        if isinstance(b, Hyperrectangle):
+            return Hyperrectangle(np.concatenate((self.lb, b.lb)),
+                np.concatenate((self.ub, b.ub)))
+        if isinstance(b, float):
+            return self.__rmul__(b)
+        else:
+            return super().__mul__(b)
+
+    def __and__(self, S):
+        if isinstance(S, Hyperrectangle):
+            return Hyperrectangle(np.minimum(self.lb, S.lb),
+                np.maximum(self.ub, S.ub))
+        else:
+            return super().__and__(S)
+
+    def __add__(self, S):
+        if isinstance(S, Hyperrectangle):
+            return Hyperrectangle(self.lb + S.lb, self.ub + S.ub)
+        else:
+            return NotImplemented
+
+    def __radd__(self, S):
+        return self.__add__(S)
+
+    def __lt__(self, S):
+        if isinstance(S, Universe):
+            return True
+        elif isinstance(S, Empty):
+            return False
+        elif isinstance(S, Hyperrectangle):
+            return np.all(self.lb <= S.lb) and np.all(self.ub >= S.ub)
+        else:
+            return NotImplemented
+
+    def __eq__(self, S):
+        if isinstance(S, (Universe, Empty)):
+            return False
+        elif isinstance(S, Hyperrectangle):
+            return np.all(self.lb == S.lb) and np.all(self.ub == S.ub)
+        else:
+            return NotImplemented
+
+    def __gt__(self, S):
+        if isinstance(S, Universe):
+            return False
+        elif isinstance(S, Empty):
+            return True
+        elif isinstance(S, Hyperrectangle):
+            return S.__lt__(self)
+        else:
+            return NotImplemented
+
+    @property
+    def lb(self):
+        ''' Lower bound vector '''
+        return self._lb
+
+    @property
+    def ub(self):
+        ''' Upper bound vector '''
+        return self._ub
+
+    @property
+    def center(self):
+        ''' Center point '''
+        return (self.ub + self.lb) / 2
+
+    @property
+    def side_length(self):
+        ''' Side length '''
+        return (self.ub - self.lb)
+
+    @property
+    def half_length(self):
+        ''' Half length (half of the side length) '''
+        return self.side_length / 2
+
+    @property
+    def dim(self):
+        ''' Set dimension '''
+        return len(self.lb)
+
+    @property
+    def hpoly_A(self):
+        return np.vstack((np.eye(self.dim), -np.eye(self.dim)))
+
+    @property
+    def hpoly_b(self):
+        return np.vstack((np.ub, -np.lb))
+
+    def bounding_box(self):
+        return self
+
+    def contains(self, x: np.ndarray):
+        ''' Check is point(s) are contained in the set
+
+        INPUTS:
+            x   Point(s) to determine containment. This is either a 1d numpy 
+                array, or a 2d numpy array where each column represents a single
+                point.
+
+        RETURNS:
+            y   Boolean or boolean vector
+        '''
+        if not isinstance(x, np.ndarray) or x.ndim > 2:
+            raise ValueError('Points must be provided as 1d numpy array or '
+                '2d numpy array where each column represents a point.')
+
+        if x.ndim == 1 and not len(x) == self.dim:
+            raise ValueError('Dimension mismatch between given point and set.')
+    
+        if x.ndim == 2 and not x.shape[0] == self.dim:
+            raise ValueError('Dimension mismatch between given points and set.')
+
+        if x.ndim > 1:
+            return np.array([self.contains(v) for v in x.T])
+
+        return np.all(x <= self.ub) and np.all(x >= self.lb)
+
+    def sample(self, n=1):
+        ''' Sample points in set
+
+        INPUTS:
+            n   (Default 1) Number of sample points to generate
+
+        RETURNS:
+            p   Sample point(s). Either a 1d numpy ndarray for single point
+                sampling or a 2d numpy array where each column represents a 
+                point.
+        '''
+        if not isinstance(n, int) or n < 0:
+            return ValueError('Number of samples must be a positive integer')
+
+        if n > 1:
+            return np.random.uniform(self.lb, self.ub, (n, self.dim)).T
+        else:
+            return np.random.uniform(self.lb, self.ub)
+
+class UnitHyperrectangle(Hyperrectangle):
+    def __init__(self, d: int):
+        if not isinstance(d, int):
+            raise TypeError('Dimension must be a positive integer.')
+            
+        if d < 1:
+            raise ValueError('Dimension must be a positive integer.')
+
+        super().__init__(-np.ones(d), np.ones(d))
+
+class EuclideanRn(Hyperrectangle):
+    ''' Euclidean Rn Space (Set)
+
+    The Euclidean Rn set is a special type of hyperrectangle where its lower 
+    and upper bounds are -inf and inf, respectively.
+
+    INPUTS:
+        n   The dimension of the Euclidean space
+    '''
+    def __init__(self, n: int):
+        if not isinstance(n, int) or n < 1:
+            raise ValueError('Dimension of the EuclideanRn set must be an '
+                'integer greater than 0.')
+
+        super().__init__(-np.inf * np.ones(n), np.inf * np.ones(n))
