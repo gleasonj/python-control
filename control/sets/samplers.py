@@ -2,9 +2,7 @@ import numpy as np
 
 from .supporsets import SupportSet, supvec
 
-from .polytopes import VPolytope, HPolytope
-
-from .hypperrectangle import Hyperrectangle
+from .polytopes import VPolytope, HPolytope, Hyperrectangle
 
 class UniformRejectionSampler():
     def __init__(self, S):

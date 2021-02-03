@@ -1,6 +1,6 @@
 import numpy as np
 
-from .special import Empty, Universe
+from .special import Empty, Universe, ZeroSet
 
 from scipy.optimize import linprog
 from scipy.linalg import block_diag
@@ -37,19 +37,21 @@ class HPolytope():
         ''' Number of facets '''
         return self.A.shape[0]
 
-    def __iter__(self):
-        self._iter_idx = 0
-        return self
-    
-    def __next__(self):
-        if self._iter_idx < self.nf:
-            a = self.A[self._iter_idx]
-            b = self.b[self._iter_idx]
-            self._iter_idx += 1
-
-            return (a, b)
+    def __add__(self, P):
+        ''' Quick method for performing Minkowski Addition '''
+        if isinstance(P, ZeroSet):
+            return self
+        if isinstance(P, np.ndarray) and P.ndim == 1:
+            return HPolytope(self.A, self.b + self.A @ P)
         else:
-            raise StopIteration
+            return NotImplemented
+
+    def __radd__(self, P):
+        ''' Quick method for performing Minkowski Addition '''
+        return self.__add__(P)
+
+    def __iter__(self):
+        return iter(zip(self.A, self.b))
         
     def __mul__(self, P):
         if isinstance(P, VPolytope):
@@ -59,6 +61,37 @@ class HPolytope():
                 np.concatenate((self.b, P.b)))
         else:
             return NotImplemented
+
+    def __lt__(self, P):
+        if isinstance(P, Empty):
+            return False
+        elif isinstance(P, Universe):
+            return True
+        else:
+            return NotImplemented
+
+    def __gt__(self, P):
+        if isinstance(P, Empty):
+            return True
+        elif isinstance(P, Universe):
+            return False
+        else:
+            return NotImplemented
+
+    def __eq__(self, P):
+        if isinstance(P, Empty):
+            res = linprog(np.zeros(self.dim), self.A, self.b, 
+                bounds=(-np.inf, np.inf))
+
+            return not res.success
+        else:
+            return NotImplemented
+
+    def __le__(self, P):
+        return self < P or self == P
+
+    def __ge__(self, P):
+        return self > P or self == P
 
     def __and__(self, P):
         if isinstance(P, HPolytope):
@@ -136,7 +169,11 @@ class HPolytope():
             raise ValueError('Point(s) must be a 1d numpy array or 2d numpy '
                 'array where each column represents a point.')
 
-        return np.all(self.A @ x <= self.b, axis=0)
+        if x.ndim == 2:
+            return np.array([self.contains(v) for v in x.T])
+        else:
+            return np.all(self.A @ x <= self.b)
+            
 
 class VPolytope():
     __array_ufunc__ = None
@@ -169,16 +206,7 @@ class VPolytope():
     # The __iter__ and __next__ function allow for iteration through the
     # vertices of the HPolytope
     def __iter__(self):
-        self._iter_idx = 0
-        return self
-
-    def __next__(self):
-        if self._iter_idx < self.nv:
-            v = self.V[:, self._iter_idx]
-            self._iter_idx += 1
-            return v
-        else:
-            raise StopIteration
+        return iter(self.V.T)
 
     def __or__(self, P):
         if isinstance(P, (HPolytope, VPolytope)):
@@ -212,6 +240,10 @@ class VPolytope():
             #       become computationally intractible because of the 
             #       exponential growth in the number of vertices.
             return VPolytope(np.hstack([np.atleast_2d(v).T + self.V for v in P]))
+        if isinstance(P, ZeroSet):
+            return self
+        if isinstance(P, np.ndarray) and P.ndim == 1:
+            return VPolytope(np.atleast_2d(P).T + self.V)
         else: 
             return NotImplemented
 
@@ -271,16 +303,7 @@ class PolytopeUnion():
         return len(self._polytopes)
 
     def __iter__(self):
-        self._pidx = 0
-        return self
-
-    def __next__(self):
-        if self._pidx < len(self):
-            P = self.polytopes[self._pidx]
-            self._pidx += 1
-            return P
-        else:
-            raise StopIteration
+        return iter(self.polytopes)
 
     def __or__(self, P):
         if isinstance(P, (HPolytope, VPolytope)):
@@ -317,7 +340,7 @@ class PolytopeUnion():
             return np.any([P.contains(x) for P in self.polytopes])
 
     def bounding_box(self):
-        bbox = Empty()
+        bbox = ZeroSet()
         for poly in self:
             bbox += poly.bounding_box()
 
@@ -326,6 +349,26 @@ class PolytopeUnion():
     @property
     def dim(self):
         return self.polytopes[0].dim
+
+class VPolytopeBundle():
+    def __init__(self, *args):
+        for V in args:
+            if not isinstance(V, VPolytope):
+                raise TypeError('All elements of a VPolytopeBunlde must be '
+                    'VPolytopes')
+
+        self._polytopes = args
+
+    @property
+    def polytopes(self):
+        return self._polytopes
+
+    @property
+    def dim(self):
+        return self.polytopes[0].dim
+
+    def __iter__(self):
+        return iter(self.polytopes)
 
 def _hypperrectangle_to_hpolytope(hr):
     return HPolytope(np.vstack((-np.eye(hr.dim), np.eye(hr.dim))),
@@ -416,20 +459,16 @@ class Hyperrectangle(HPolytope):
         if isinstance(S, Hyperrectangle):
             return Hyperrectangle(self.lb + S.lb, self.ub + S.ub)
         else:
-            return NotImplemented
+            return super().__add__(S)
 
     def __radd__(self, S):
         return self.__add__(S)
 
     def __lt__(self, S):
-        if isinstance(S, Universe):
-            return True
-        elif isinstance(S, Empty):
-            return False
-        elif isinstance(S, Hyperrectangle):
+        if isinstance(S, Hyperrectangle):
             return np.all(self.lb <= S.lb) and np.all(self.ub >= S.ub)
         else:
-            return NotImplemented
+            return super().__lt__(S)
 
     def __eq__(self, S):
         if isinstance(S, (Universe, Empty)):
@@ -440,14 +479,10 @@ class Hyperrectangle(HPolytope):
             return NotImplemented
 
     def __gt__(self, S):
-        if isinstance(S, Universe):
-            return False
-        elif isinstance(S, Empty):
-            return True
-        elif isinstance(S, Hyperrectangle):
+        if isinstance(S, Hyperrectangle):
             return S.__lt__(self)
         else:
-            return NotImplemented
+            return super().__gt__(S)
 
     @property
     def lb(self):
@@ -478,14 +513,6 @@ class Hyperrectangle(HPolytope):
     def dim(self):
         ''' Set dimension '''
         return len(self.lb)
-
-    @property
-    def hpoly_A(self):
-        return np.vstack((np.eye(self.dim), -np.eye(self.dim)))
-
-    @property
-    def hpoly_b(self):
-        return np.vstack((np.ub, -np.lb))
 
     def bounding_box(self):
         return self

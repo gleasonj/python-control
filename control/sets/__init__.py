@@ -1,5 +1,3 @@
-from .hypperrectangle import Hyperrectangle, EuclideanRn
-
 from .special import Empty, Universe
 
 from .supporsets import supvec, \
@@ -9,7 +7,7 @@ from .supporsets import supvec, \
                         Ball1NormSupportSet, \
                         BallpNormSupportSet
 
-from .polytopes import VPolytope, HPolytope
+from .polytopes import VPolytope, HPolytope, Hyperrectangle
 
 from .samplers import UniformDBallSampler, \
                       UniformDSphereSampler, \
