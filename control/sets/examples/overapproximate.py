@@ -9,7 +9,7 @@ np.random.seed(8675309)
 T = cset.Ball2NormSupportSet(np.zeros(2), 1.0)
 S = cset.overapproximate(T, np.vstack((np.eye(2), -np.eye(2))).T)
 P = cset.overapproximate(T, 10)
-
+    
 X = cset.UniformRejectionSampler(S).sample(3000)
 Y = cset.UniformRejectionSampler(P).sample(3000)
 Z = cset.UniformRejectionSampler(T).sample(3000)

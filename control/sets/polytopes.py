@@ -6,6 +6,34 @@ from scipy.optimize import linprog
 from scipy.linalg import block_diag
 
 class HPolytope():
+    ''' HPolytope
+
+    An HPolytope, also called a halfspace polytope or a facet polytope, is a
+    type of convex set defined through a set of inequalities. Given a matrix, A,
+    and a vector, b, an HPolytope is defined as:
+
+        P = { x : A @ x <= b }
+
+    NOTE: All HPolytopes have an equivalent VPolytope representation. 
+          Transitioning between these two representation is known as the 
+          vertex-facet enumeration problem---also called the convex hull 
+          problem. This enumeration can be efficiently computed for polytopes
+          of very small dimensions (typically less than 3) or limited 
+          complexity, i.e. a limited number of facets and vertices.
+
+    NOTE: Unlike the implementation of VPolytopes, it is possible to define
+          an HPolytope with an A, and b, that results in a technically empty
+          polytope, i.e. contains no points.
+
+    TODO: In the current implementation, the vertex-facet enumeration is not
+          implemented. Python does have an implementation of the 
+          Double-Description method (cddlib) to perform this enumeration.
+          Implementing this is in the works.
+
+    INPUTS:
+        A   Constraint matrix
+        b   Constraint vector
+    '''
     __array_ufunc__ = None
     def __init__(self, A: np.ndarray, b: np.ndarray):
         if not isinstance(A, np.ndarray) or not isinstance(b, np.ndarray):
@@ -176,6 +204,31 @@ class HPolytope():
             
 
 class VPolytope():
+    ''' VPolytope
+
+    A VPolytope, known as a vertex polytope, is a type of polytopic set which
+    is described as the convex hull of a set of points. The set, S, is given
+    by:
+    
+        S = { x : \sum_{i} lam_{i} v_{i} == x, 
+                  \sum_{i} lam_{i} == 1,
+                  v_{i} \in vertices(S) }
+
+    NOTE: All HPolytopes have an equivalent VPolytope representation. 
+          Transitioning between these two representation is known as the 
+          vertex-facet enumeration problem---also called the convex hull 
+          problem. This enumeration can be efficiently computed for polytopes
+          of very small dimensions (typically less than 3) or limited 
+          complexity, i.e. a limited number of facets and vertices.
+
+    TODO: In the current implementation, the vertex-facet enumeration is not
+          implemented. Python does have an implementation of the 
+          Double-Description method (cddlib) to perform this enumeration.
+          Implementing this is in the works.
+
+    INPUTS:
+        V   Vertices
+    '''
     __array_ufunc__ = None
     def __init__(self, V: np.ndarray):
         if not isinstance(V, np.ndarray):
@@ -351,6 +404,24 @@ class PolytopeUnion():
         return self.polytopes[0].dim
 
 class VPolytopeBundle():
+    ''' VPolytopeBunlde
+
+    A VPolytope bundle is a class used to represent the intersection of 
+    vertex polytopes. Unlike their HPolytope counterparts, vertex polytopes 
+    cannot effectively compute intersections, they must be converted into
+    HPolytopes in order to perform the operation. As the current implementation
+    does not support polytope converstion, the bundle is used.
+
+    INPUTS:
+        V1, V2, ...     Vertex polytopes
+
+    EXAMPLE:
+        V1 = VPolytope(np.random.uniform(-1, 1, (2, 100)))
+        V2 = VPolytope(np.random.uniform(-1, 1, (2, 100)))
+        V3 = VPolytope(np.random.uniform(-1, 1, (2, 100)))
+        V4 = VPolytope(np.random.uniform(-1, 1, (2, 100)))
+        VPolytopeBundle(V1, V2, V3, V4)
+    '''
     def __init__(self, *args):
         for V in args:
             if not isinstance(V, VPolytope):
