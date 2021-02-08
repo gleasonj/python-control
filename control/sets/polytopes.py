@@ -1,9 +1,55 @@
+# polytopes.py - Control Sets Polytope implementations
+#
+# Author: Joseph D. Gleason
+# Date: 2021-02-04
+#
+# These are classes used to define facet or halfspace polytopes (HPolytopes) 
+# and vertex polytopes (VPolytopes).
+#
+# Copyright (c) 2021 by Joseph D. Gleason
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the California Institute of Technology nor
+#    the names of its contributors may be used to endorse or promote
+#    products derived from this software without specific prior
+#    written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+# FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL CALTECH
+# OR THE CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+# USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+# OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+#
+# $Id$
+
+# TODO: Implement some basic polytope redundancy minimization methods.
+
 import numpy as np
 
 from .special import Empty, Universe, ZeroSet
 
 from scipy.optimize import linprog
 from scipy.linalg import block_diag
+
+import cdd
 
 class HPolytope():
     ''' HPolytope
@@ -69,8 +115,12 @@ class HPolytope():
         ''' Quick method for performing Minkowski Addition '''
         if isinstance(P, ZeroSet):
             return self
-        if isinstance(P, np.ndarray) and P.ndim == 1:
+        elif isinstance(P, np.ndarray) and P.ndim == 1:
             return HPolytope(self.A, self.b + self.A @ P)
+        elif isinstance(P, VPolytope):
+            return _vertex_enumeration(self) + P
+        elif isinstance(P, HPolytope):
+            return _vertex_enumeration(self) + _vertex_enumeration(P)
         else:
             return NotImplemented
 
@@ -149,28 +199,6 @@ class HPolytope():
             return self.__or__(P)
         else:
             return NotImplemented
-
-    def bounding_box(self):
-        ''' Return the bounding box of the polytope 
-
-        RETURNS:
-            bbox    Hyperrectangle object that defines the bounding box for the 
-                    polytope
-        '''
-        A = np.vstack((-np.eye(self.dim), np.eye(self.dim)))
-        b = np.zeros(A.shape[0])
-
-        for i in range(len(b)):
-            a = A[i]
-            if sum(a) == 1.0:
-                b[i] = -linprog(-a, self.A, self.b, bounds=(-np.inf, np.inf)).fun
-            else:
-                b[i] = linprog(-a, self.A, self.b, bounds=(-np.inf, np.inf)).fun
-
-        # Using a trick here: the floor divide // will automatically convert
-        # the resulting division to an int. By definition, the len(b) is an
-        # even number so this will work.
-        return Hyperrectangle(b[:len(b)//2], b[len(b)//2:])
 
     def __rmatmul__(self, M):
         if isinstance(M, np.ndarray):
@@ -287,6 +315,14 @@ class VPolytope():
         else:
             return NotImplemented
 
+    def __and__(self, P):
+        if isinstance(P, HPolytope):
+            return _facet_enumeration(self) | P
+        elif isinstance(P, VPolytope):
+            return _facet_enumeration(self) | _facet_enumeration(P)
+        else:
+            return NotImplemented
+
     def __add__(self, P):
         if isinstance(P, VPolytope):
             # NOTE  Minkowski summation of vertex polytopes can very quickly 
@@ -299,9 +335,6 @@ class VPolytope():
             return VPolytope(np.atleast_2d(P).T + self.V)
         else: 
             return NotImplemented
-
-    def bounding_box(self):
-        return Hyperrectangle(np.min(self.V, axis=1), np.max(self.V, axis=1))
 
     def sample_vertex(self):
         return self.V[:, np.random.randint(self.nv)]
@@ -655,8 +688,68 @@ class EuclideanRn(Hyperrectangle):
 
         super().__init__(-np.inf * np.ones(n), np.inf * np.ones(n))
 
+
+def _polytope_bounding_box(P):
+    if isinstance(P, HPolytope):
+        pass
+    elif isinstance(P, VPolytope):
+        pass
+    else:
+        return TypeError('Must porvide a polytope.')
+
+def _polytope_is_bounded(P):
+    if isinstance(P, HPolytope):
+        A = np.vstack((-np.eye(P.dim), np.eye(P.dim)))
+        b = np.zeros(A.shape[0])
+
+        for i in range(len(b)):
+            a = A[i]
+            b[i] = -linprog(-a, P.A, P.b, bounds=(-np.inf, np.inf)).fun
+
+        # Using a trick here: the floor divide // will automatically convert
+        # the resulting division to an int. By definition, the len(b) is an
+        # even number so this will work.
+        return not np.any(np.isinf(np.concatenate((-b[:len(b)//2], b[len(b)//2:])))) 
+    elif isinstance(P, VPolytope):
+        return not np.any(np.isinf(P.V))
+    else:
+        return TypeError('Must provide a polytope')
+
+
+def _facet_enumeration(S):
+    if not isinstance(S, VPolytope):
+        raise TypeError('Set must be of type HPolytope')
+
+    if not _polytope_is_bounded(S):
+        raise ValueError('Can only perform facet enumeration for bounded '
+            'VPolytope(s). Rays are not currently supported.')
+
+    V = cdd.Matrix(np.vstack((np.ones(S.nv), S.V)).T, number_type='float')
+    V.rep_type = cdd.RepType.GENERATOR
+    P = cdd.Polyhedron(V)
+    H = np.array(P.get_inequalities())
+    return HPolytope(-H[:, 1:], H[:, 0])
+
+def _vertex_enumeration(S):
+    if not isinstance(S, HPolytope):
+        raise TypeError('Set must be of type HPolytope')
+    
+    if not _polytope_is_bounded(S):
+        raise ValueError('Can only perform vertex enumeration for bounded '
+            'HPolytope(s). Rays are not currently supported.')
+
+    H = cdd.Matrix(np.vstack((S.b, -S.A.T)).T, number_type='float')
+    H.rep_type = cdd.RepType.INEQUALITY
+    P = cdd.Polyhedron(H)
+    return VPolytope(np.array(P.get_generators())[:, 1:].T)
+
 def to_vpolytope(P):
-    raise NotImplementedError('In progress...')
+    if isinstance(P, VPolytope):
+        return P
+    elif isinstance(P, HPolytope):
+        pass
+    else:
+        raise ValueError('In progress...')
 
 def to_hpolytope(P):
     raise NotImplementedError('In progress...')

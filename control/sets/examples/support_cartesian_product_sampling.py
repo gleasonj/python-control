@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 B2 = cset.Ball2NormSupportSet(np.zeros(2), 1.0)
 H2 = cset.Hyperrectangle(-np.ones(2), np.ones(2))
 
-S = B2 * H2
+S = B2 * cset.convertset(H2, cset.SupportSet)
 
 X = cset.UniformRejectionSampler(S).sample(3000)
 

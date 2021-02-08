@@ -1,8 +1,50 @@
+# supportsets.py - Control Sets Support Sets
+#
+# Author: Joseph D. Gleason
+# Date: 2021-02-04
+#
+# These are classes and function for creating support sets and functions to 
+# compute the support function and support vector values.
+#
+# Copyright (c) 2021 by Joseph D. Gleason
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the California Institute of Technology nor
+#    the names of its contributors may be used to endorse or promote
+#    products derived from this software without specific prior
+#    written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+# FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL CALTECH
+# OR THE CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+# USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+# OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+#
+# $Id$
+
 import numpy as np
 
-from .polytopes import HPolytope, VPolytope, Hyperrectangle
-
 from scipy.optimize import linprog, minimize, NonlinearConstraint
+
+from .hypperrectangle import Hyperrectangle
 
 class SupportSet():
     ''' Base Support Set Class
@@ -21,24 +63,12 @@ class SupportSet():
             return SupportSetCartesianProduct(self, S)
         elif isinstance(S, float):
             return ScalorMulSupportSet(self, S)
-        elif isinstance(S, Hyperrectangle):
-            return SupportSetCartesianProduct(self, HyperrectangleSupportSet(S))
-        elif isinstance(S, HPolytope):
-            return SupportSetCartesianProduct(self, HPolytopeSupportSet(S))
-        elif isinstance(S, VPolytope):
-            return SupportSetCartesianProduct(self, VPolytopeSupportSet(S))
         else:
             return NotImplemented
 
     def __rmul__(self, S):
         if isinstance(S, float):
             return ScalorMulSupportSet(self, S)
-        elif isinstance(S, Hyperrectangle):
-            return SupportSetCartesianProduct(HyperrectangleSupportSet(S), self)
-        elif isinstance(S, HPolytope):
-            return SupportSetCartesianProduct(HPolytopeSupportSet(S), self)
-        elif isinstance(S, VPolytope):
-            return SupportSetCartesianProduct(VPolytopeSupportSet(S), self)
         else:
             return NotImplemented
 
@@ -53,13 +83,6 @@ class SupportSet():
                 return MinkowskiAdditionSupportSet(self, SingletonSupportSet(B))
             else:
                 return NotImplemented
-        elif isinstance(B, Hyperrectangle):
-            return MinkowskiAdditionSupportSet(self, 
-                HyperrectangleSupportSet(B))
-        elif isinstance(B, HPolytope):
-            return MinkowskiAdditionSupportSet(self, HPolytopeSupportSet(B))
-        elif isinstance(B, VPolytope):
-            return MinkowskiAdditionSupportSet(self, VPolytopeSupportSet(B))
         else:
             return NotImplemented
 
@@ -67,151 +90,6 @@ class SupportSet():
     def dim(self):
         return NotImplementedError('Any subclass of SupportSet needs to define '
             'the dimension of the set.')
-
-def supvec(S, l: np.ndarray):
-    ''' Compute the support vector for given directions.
-
-    The support vector of the set, S, in the direction, l, is defined as:
-    
-            argmax    l @ x      w.r.t x
-        subject to    x in S
-
-    INPUTS:
-        l   Direction(s) in which to compute the support vectors. A single 
-            direction is given by a 1d numpy array; multiple directions are 
-            given by a 2d numpy array where each column is a direction.
-
-    RETURNS:
-        v   Support vector(s). A single direction is given by a 1d numpy array; 
-            multiple vectors are given by a 2d numpy array where each column is 
-            a direction.
-    '''
-    if not isinstance(l, np.ndarray):
-        raise TypeError('Direction vector(s) must be a 1d numpy array or a '
-            '2d numpy array where each column represents a direction.')
-    
-    if l.ndim > 2:
-        raise ValueError('Direction vector(s) must be a 1d numpy array or a '
-            '2d numpy array where each column represents a direction.')
-
-    if l.ndim == 2 and not S.dim == l.shape[0]:
-        raise ValueError('Dimension mismatch between direction(s) and set')
-
-    if l.ndim == 2:
-        return np.array([supvec(S, v) for v in l.T]).T
-    
-    if isinstance(S, SupportSet):
-        return S(l / np.linalg.norm(l))
-    elif isinstance(S, Hyperrectangle):
-        return supvec(HyperrectangleSupportSet(S), l)
-    elif isinstance(S, HPolytope):
-        return supvec(HPolytopeSupportSet(S), l)
-    elif isinstance(S, VPolytope):
-        return supvec(VPolytopeSupportSet(S), l)
-    else:
-        raise TypeError('Set must be one of the following types: \n\n'
-            '    SupportSet, Hyperrectangle, HPolytope, VPolytope')
-
-def supfcn(S: SupportSet, l: np.ndarray):
-    ''' Compute the support function values for given directions.
-
-    The support function value of the set, S, in the direction, l, is defined 
-    as:
-    
-               max    l @ x      w.r.t x
-        subject to    x in S
-
-    INPUTS:
-        l   Direction(s) in which to compute the support vectors. A single 
-            direction is given by a 1d numpy array; multiple directions are 
-            given by a 2d numpy array where each column is a direction.
-
-    RETURNS:
-        v   Support function value(s). A single value is given by a float; 
-            multiple values are given by a 1d numpy array.
-    '''
-    if l.ndim == 2:
-        return np.array([supfcn(S, x) for x in l.T])
-    else:
-        return l @ supvec(S, l)
-
-class HPolytopeSupportSet(SupportSet):
-    ''' SupportSet wrapper for an HPolytope set 
-    
-    INPUTS:
-        S   HPolytope set
-    '''
-    def __init__(self, P: HPolytope):
-        self._P = P
-
-    def __call__(self, l):
-        res = linprog(l, self._P.A, self._P.b, bounds=(-np.inf, np.inf))
-
-        return res.x
-
-    def contains(self, x):
-        return self._P.contains(x)
-
-    def bounding_box(self):
-        return self._P.bounding_box()
-
-    @property
-    def dim(self):
-        return self._P.dim
-
-class VPolytopeSupportSet(SupportSet):
-    ''' SupportSet wrapper for an VPolytope set 
-    
-    INPUTS:
-        S   VPolytope set
-    '''
-    def __init__(self, P: VPolytope):
-        self._P = P
-
-    def __call__(self, l):
-        return self._P.V[:, np.argmax(l @ self._P.V)]
-
-    def contains(self, x):
-        return self._P.contains(x)
-
-    @property
-    def dim(self):
-        return self._P.dim
-
-class HyperrectangleSupportSet(HPolytopeSupportSet):
-    ''' SupportSet wrapper for a Hyperrectangle set 
-    
-    INPUTS:
-        P   Hyperrectangle set
-    '''
-    def __init__(self, P: Hyperrectangle):
-        super().__init__(P)
-
-    def __call__(self, l):
-        v = np.zeros(self._P.dim)
-        for i in range(self._P.dim):
-            v[i] = self._P.lb[i] if l[i] < 0 else self._P.ub[i]
-
-        return v
-
-    def bounding_box(self):
-        return self._P
-
-class SingletonSupportSet(SupportSet):
-    ''' SupportSet wrapper for a numpy array 
-
-    INPUTS:
-        x   Numpy array
-    '''
-    def __init__(self, x: np.ndarray):
-        self._x = x
-
-    def __call__(self, l):
-        return self._x
-
-    @property
-    def dim(self):
-        return len(self._x)
 
 class MinkowskiAdditionSupportSet(SupportSet):
     ''' SupportSet representing the Minkowski summation of two support sets.
@@ -282,6 +160,22 @@ class ScalorMulSupportSet(SupportSet):
     def dim(self):
         return self._S.dim
 
+class SingletonSupportSet(SupportSet):
+    ''' SupportSet wrapper for a numpy array 
+
+    INPUTS:
+        x   Numpy array
+    '''
+    def __init__(self, x: np.ndarray):
+        self._x = x
+
+    def __call__(self, l):
+        return self._x
+
+    @property
+    def dim(self):
+        return len(self._x)
+
 class SupportSetCartesianProduct(SupportSet):
     ''' SupportSet representing the cartesian product of support sets.
 
@@ -294,14 +188,11 @@ class SupportSetCartesianProduct(SupportSet):
         self._B = B
 
     def __call__(self, l):
-        np.concatenate((self._A(l), self._B(l)))
+        return np.concatenate((self._A(l[:self._A.dim]), self._B(l[self._A.dim:])))
 
     @property
     def dim(self):
         return self._A.dim + self._B.dim
-
-    def bounding_box(self):
-        return self._A.bounding_box() * self._B.bounding_box()
 
     def contains(self, x):
         if x.ndim > 1:
@@ -374,9 +265,6 @@ class BallpNormSupportSet(SupportSet):
         else:
             return np.linalg.norm(self.center - x, self.p) <= self.radius
 
-    def bounding_box(self):
-        return Hyperrectangle(self.center-self.radius, self.center+self.radius)
-
 class Ball1NormSupportSet(BallpNormSupportSet):
     def __init__(self, center: np.ndarray, radius: float):
         super().__init__(1, center, radius)
@@ -391,14 +279,3 @@ class Ball2NormSupportSet(BallpNormSupportSet):
 class BallInfNormSupportSet(BallpNormSupportSet):
     def __init__(self, center: np.ndarray, radius: float):
         super().__init__(np.inf, center, radius)
-
-def to_supportset(P):
-    if isinstance(P, Hyperrectangle):
-        return HyperrectangleSupportSet(P)
-    elif isinstance(P, HPolytope):
-        return HPolytopeSupportSet(P)
-    elif isinstance(P, VPolytope):
-        return VPolytopeSupportSet(P)
-    else:
-        raise TypeError('Unable to convert set of type {} to a support set.'.format(
-            type(P)))

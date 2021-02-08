@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 sys = control.ss(np.array([[0, 1], [0, 0]]), np.array([[0, 1]]).T, np.eye(2),
     np.atleast_2d(np.zeros(2)).T).sample(0.2)
 
-X = cset.to_supportset(cset.Hyperrectangle(-np.ones(2), np.ones(2)))
-U = cset.to_supportset(cset.Hyperrectangle(np.array([-0.1]), np.array([0.1])))
+X = cset.convertset(cset.Hyperrectangle(-np.ones(2), np.ones(2)), cset.SupportSet)
+U = cset.convertset(cset.Hyperrectangle(np.array([-0.1]), np.array([0.1])), cset.SupportSet)
 Y = np.linalg.inv(sys.A) @ (X + (-sys.B @ U))
 
 Z = cset.ConvexWalkSampler(Y).sample(3000)
